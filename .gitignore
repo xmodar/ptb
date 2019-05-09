@@ -1,0 +1,30 @@
+# the virtual environment
+.venv/
+
+# vs code ctags
+.vscode/tags
+
+# python bulid files
+dist/
+*.egg-info/
+
+# cache compiled files
+**/__pycache__/
+*.pyc
+*.pyo
+
+# jupyter checkpoint folders
+**/.ipynb_checkpoints/
+
+# mkdocs site folder
+site/
+
+# mypy cache folder
+.mypy_cache/
+
+# pytest cache folder
+.pytest_cache/
+.coverage
+
+# tox cache folder
+.tox/
