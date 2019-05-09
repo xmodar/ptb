@@ -84,7 +84,7 @@ def main(config, run_mode):
     help='Mini-batch size.')
 @click.option(
     '--learning-rate',
-    '-l',
+    '-lr',
     type=click.FloatRange(min=0),
     default=1e-1,
     help='Learning rate.')
@@ -124,6 +124,12 @@ def main(config, run_mode):
     type=click.Path(path_type=str),
     default='checkpoint.pth',
     help='A checkpoint file to resume from.')
+@click.option(
+    '--log-dir',
+    '-l',
+    type=click.Path(path_type=str),
+    default='logs',
+    help='A tensorboard logs directory.')
 @click.option(
     '--seed',
     '-sd',

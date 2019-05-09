@@ -6,6 +6,7 @@ from time import time
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, models, transforms
 
 from .utils import AverageMeter, Flatten, compute_accuracy, manual_seed
@@ -36,7 +37,7 @@ models.__dict__['small_cnn'] = small_cnn
 
 def train_classifier(evaluate_only, dataset, model, pretrained, epochs,
                      batch_size, learning_rate, momentum, weight_decay, gpu,
-                     jobs, checkpoint, resume, seed):
+                     jobs, checkpoint, resume, log_dir, seed):
     """Train and/or evaluate a network."""
     manual_seed(seed, benchmark_otherwise=True)
     resume = Path(resume if resume else '')
@@ -82,13 +83,13 @@ def train_classifier(evaluate_only, dataset, model, pretrained, epochs,
     start_epoch = 0
     if resume.is_file():
         print("=> loading checkpoint '{}'".format(resume))
-        checkpoint = torch.load(resume)
-        start_epoch = checkpoint['epoch']
-        best_acc1 = checkpoint['best_acc1']
-        net.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        state = torch.load(resume)
+        start_epoch = state['epoch']
+        best_acc1 = state['best_acc1']
+        net.load_state_dict(state['state_dict'])
+        optimizer.load_state_dict(state['optimizer'])
         print("=> loaded checkpoint '{}' (epoch {})".format(
-            resume, checkpoint['epoch']))
+            resume, state['epoch']))
     elif resume != Path():
         print("=> no checkpoint found at '{}'".format(resume))
 
@@ -135,12 +136,14 @@ def train_classifier(evaluate_only, dataset, model, pretrained, epochs,
     process = lambda loader, opt: one_epoch(
         loader, net, criterion, opt, using_cuda, gpu,)
     progress = process(val_loader, None)
-    val_loss = progress['Loss'].avg
-    val_acc = progress['Acc@1'].avg
-    print(f'Test[{val_loss:.4e}: {val_acc:6.2f}%]')
+    val_loss = progress['Loss']
+    val_acc = progress['Acc@1']
+    print(f'Test[{val_loss}: {val_acc}%]')
     if evaluate_only:
         return
 
+    if log_dir:
+        writer = SummaryWriter(log_dir)
     for epoch in range(start_epoch, epochs):
         # decay the learning rate by 10 every 30 epochs
         if epoch % 30 == 0:
@@ -149,21 +152,27 @@ def train_classifier(evaluate_only, dataset, model, pretrained, epochs,
                 param_group['lr'] = lr
 
         # train for one epoch and evaluate on validation set
-        progress = process(train_loader, optimizer)
-        train_loss = progress['Loss'].avg
-        train_acc = progress['Acc@1'].avg
+        train_progress = process(train_loader, optimizer)
+        train_loss = train_progress['Loss']
+        train_acc = train_progress['Acc@1']
 
-        progress = process(val_loader, None)
-        val_loss = progress['Loss'].avg
-        val_acc = progress['Acc@1'].avg
+        val_progress = process(val_loader, None)
+        val_loss = val_progress['Loss']
+        val_acc = val_progress['Acc@1']
 
         print(f'[{epoch}@{lr:.4e}] '
-              f'Train[{train_loss:.4e}: {train_acc:6.2f}%] '
-              f'Test[{val_loss:.4e}: {val_acc:6.2f}%]')
+              f'Train[{train_loss}: {train_acc}%] '
+              f'Test[{val_loss}: {val_acc}%]')
+
+        if log_dir:
+            for meter in train_progress.values():
+                writer.add_scalar(f'Train/{meter.name}', meter.avg, epoch)
+            for meter in val_progress.values():
+                writer.add_scalar(f'Test/{meter.name}', meter.avg, epoch)
 
         # remember best acc@1 and save checkpoint
-        if val_acc >= best_acc1:
-            best_acc1 = val_acc
+        if val_acc.avg >= best_acc1:
+            best_acc1 = val_acc.avg
             if checkpoint != Path():
                 torch.save({
                     'epoch': epoch + 1,
@@ -172,6 +181,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, epochs,
                     'best_acc1': best_acc1,
                     'optimizer': optimizer.state_dict(),
                 }, checkpoint)
+    if log_dir:
+        writer.close()
 
 
 def one_epoch(train_loader, net, criterion, optimizer, using_cuda, gpu):

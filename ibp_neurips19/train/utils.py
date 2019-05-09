@@ -58,10 +58,14 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
 
-    def __str__(self):
+    def __repr__(self):
         """Nice representation."""
         msg = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
         return msg.format(**self.__dict__)
+
+    def __str__(self):
+        """Short representation."""
+        return f'{{{self.fmt}}}'.format(self.avg)
 
 
 class Flatten(torch.nn.Module):
