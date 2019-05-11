@@ -6,35 +6,14 @@ from time import time
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import datasets, models, transforms
 
-from .utils import (AverageMeter, Flatten, compute_accuracy, get_device_order,
+from ..datasets import get_loader
+from ..models import get_model
+from .utils import (AverageMeter, compute_accuracy, get_device_order,
                     manual_seed)
 
-__all__ = ['train_classifier', 'one_epoch', 'small_cnn']
-
-
-def small_cnn(pretrained=False):
-    """Define a small CNN."""
-    if pretrained:
-        raise NotImplementedError('We don\'t have pretrained weights.')
-    activation = nn.ReLU(inplace=True)
-    net = nn.Sequential(
-        nn.Conv2d(1, 16, 4, stride=2),
-        activation,
-        nn.Conv2d(16, 32, 4, stride=1),
-        activation,
-        Flatten(),
-        nn.Linear(3200, 100),
-        activation,
-        nn.Linear(100, 10),
-    )
-    return net
-
-
-models.__dict__['small_cnn'] = small_cnn
+__all__ = ['train_classifier', 'one_epoch']
 
 
 def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
@@ -58,51 +37,16 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         return [t.to(device, non_blocking=non_blocking) for t in tensors]
 
     # Data loading code
-    datasets_dir = Path.home() / '.torch/datasets'
-    means = {
-        'MNIST': [0.1307],
-        'SVHN': [0.5071, 0.4867, 0.4408],
-        'CIFAR10': [0.4915, 0.4823, 0.4468],
-        'CIFAR100': [0.5072, 0.4867, 0.4412],
-    }
-    stds = {
-        'MNIST': [0.3081],
-        'SVHN': [0.2675, 0.2565, 0.2761],
-        'CIFAR10': [0.2470, 0.2435, 0.2616],
-        'CIFAR100': [0.2673, 0.2564, 0.2762],
-    }
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(means[dataset], stds[dataset]),
-    ])
-    train_dataset = datasets.__dict__[dataset](
-        datasets_dir, train=True, transform=transform, download=True)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=jobs if devices else 0,
-        pin_memory=len(devices) > 0,
-        drop_last=True,
-    )
-    val_dataset = datasets.__dict__[dataset](
-        datasets_dir, train=False, transform=transform, download=True)
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=jobs if devices else 0,
-        pin_memory=len(devices) > 0,
-        drop_last=False,
-    )
+    cuda = len(devices) > 0
+    train_loader = get_loader(dataset, True, batch_size, cuda, jobs)
+    val_loader = get_loader(dataset, False, batch_size, cuda, jobs)
 
     # create the model
     if pretrained:
         print(f'=> using pre-trained model {model}')
-        net = models.__dict__[model](pretrained=True)
     else:
         print(f'=> creating model {model}')
-        net = models.__dict__[model]()
+    net = get_model(model, pretrained)
     keys = net.state_dict(keep_vars=True).keys()
 
     # define loss function (criterion) and optimizer
@@ -128,10 +72,9 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         best_acc1 = state['best_acc1']
         net.load_state_dict(state['state_dict'])
         optimizer.load_state_dict(state['optimizer'])
-        print("=> loaded checkpoint '{}' (epoch {})".format(
-            resume, state['epoch']))
+        print(f"=> loaded checkpoint '{resume}' (epoch {state['epoch']})")
     elif resume != Path():
-        print("=> no checkpoint found at '{}'".format(resume))
+        print(f"=> no checkpoint found at '{resume}'")
 
     # DataParallel will divide and allocate batch_size to all GPUs
     if len(devices) > 1:
@@ -172,7 +115,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
               f'Test[{val_loss}: {val_acc}%]')
 
         if log_dir:
-            writer.add_scalar('Train/learning_rate', lr, epoch)
+            writer.add_scalar('Train/LearingRate', lr, epoch)
             for meter in train_progress.values():
                 writer.add_scalar(f'Train/{meter.name}', meter.avg, epoch)
             for meter in val_progress.values():
@@ -196,8 +139,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
 
 def one_epoch(train_loader, net, criterion, optimizer, preporcess):
     """Perform one training epoch."""
-    batch_time = AverageMeter('Time', ':6.3f')
-    data_time = AverageMeter('Data', ':6.3f')
+    batch_time = AverageMeter('Time/BatchTotal', ':6.3f')
+    data_time = AverageMeter('Time/BatchData', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     top5 = AverageMeter('Acc@5', ':6.2f')
