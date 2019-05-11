@@ -5,7 +5,10 @@ import random
 import numpy as np
 import torch
 
-__all__ = ['manual_seed', 'compute_accuracy', 'AverageMeter', 'Flatten']
+__all__ = [
+    'manual_seed', 'compute_accuracy', 'AverageMeter', 'Flatten',
+    'get_device_order'
+]
 
 
 def manual_seed(value=None, benchmark_otherwise=False):
@@ -36,6 +39,14 @@ def compute_accuracy(output, target, top_k=(1,)):
         correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
+
+
+def get_device_order():
+    """Get the cuda devices sorted from highest to lowest total memory."""
+    return sorted(
+        range(torch.cuda.device_count()),
+        key=lambda i: -torch.cuda.get_device_properties(i).total_memory,
+    )
 
 
 class AverageMeter:

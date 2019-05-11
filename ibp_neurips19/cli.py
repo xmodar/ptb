@@ -70,19 +70,6 @@ def main(config, run_mode):
     show_default=True,
     help='Whether to load a pretrained model.')
 @click.option(
-    '--number-of-epochs',
-    '-n',
-    'epochs',
-    type=click.IntRange(min=0),
-    default=90,
-    help='The maximum number of epochs.')
-@click.option(
-    '--batch-size',
-    '-b',
-    type=click.IntRange(min=0),
-    default=256,
-    help='Mini-batch size.')
-@click.option(
     '--learning-rate',
     '-lr',
     type=click.FloatRange(min=0),
@@ -101,11 +88,18 @@ def main(config, run_mode):
     default=1e-4,
     help='SGD weight decay.')
 @click.option(
-    '--gpu',
-    '-g',
+    '--number-of-epochs',
+    '-n',
+    'epochs',
     type=click.IntRange(min=0),
-    default=None,
-    help='The GPU to use (None uses all available GPUs).')
+    default=90,
+    help='The maximum number of epochs.')
+@click.option(
+    '--batch-size',
+    '-b',
+    type=click.IntRange(min=0),
+    default=256,
+    help='Mini-batch size.')
 @click.option(
     '--jobs',
     '-j',
@@ -113,16 +107,16 @@ def main(config, run_mode):
     default=4,
     help='Number of threads for data loading when using cuda.')
 @click.option(
-    '--resume',
-    '-r',
-    type=click.Path(path_type=str),
-    default='',
-    help='A checkpoint file to resume from.')
-@click.option(
     '--checkpoint',
     '-c',
     type=click.Path(path_type=str),
     default='checkpoint.pth',
+    help='A checkpoint file to resume from.')
+@click.option(
+    '--resume',
+    '-r',
+    type=click.Path(path_type=str),
+    default='',
     help='A checkpoint file to resume from.')
 @click.option(
     '--log-dir',

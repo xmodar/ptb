@@ -61,7 +61,7 @@
 			"--ignore=E731,E741"
 		],
 		"python.linting.pylintArgs": [
-			// "--generated-members=torch.*,argparse.Namespace.*",
+			"--generated-members=torch.*,argparse.Namespace.*",
 			// "--ignored-modules=torch",
 			// "--enable=unused-import",
 			"--disable=C0111,C0103,C0411,C1801,R0913,R0903"
@@ -79,7 +79,7 @@
 					"request": "launch",
 					"program": "${file}",
 					"console": "integratedTerminal",
-					"debugStdLib": true
+					"justMyCode": false
 				},
 				{
 					"name": "Python: Current File",
@@ -87,7 +87,7 @@
 					"request": "launch",
 					"program": "${file}",
 					"console": "integratedTerminal",
-					"debugStdLib": false
+					"justMyCode": true
 				}
 			]
 		}
