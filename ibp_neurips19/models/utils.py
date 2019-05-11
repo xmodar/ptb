@@ -1,8 +1,31 @@
 """Neural networks utilities module."""
 
-from torch import nn
+from collections import namedtuple
 
-__all__ = ['Flatten']
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+__all__ = [
+    'Flatten', 'compute_output_bounds', 'deep_mind_bounds', 'propagate_bounds'
+]
+
+
+def check_type(layer, types):
+    """Check if a given layer is a monotonic function."""
+    for t in types:
+        if type(t) is type:  # pylint: disable=unidiomatic-typecheck
+            if isinstance(layer, t):
+                return True
+        elif layer is t:
+            return True
+    return False
+
+
+check_relu = lambda layer: check_type(layer, [F.relu, nn.ReLU])
+check_monotonic = lambda layer: check_type(layer, [
+    F.tanh, F.sigmoid, F.relu, nn.ReLU, nn.Sigmoid, nn.Tanh, nn.MaxPool2d
+])
 
 
 class Flatten(nn.Module):
@@ -25,3 +48,79 @@ class Flatten(nn.Module):
         if end_dim is None:
             end_dim = self.end_dim
         return inputs.flatten(start_dim, end_dim)
+
+
+def compute_output_bounds(layer, lower, upper):
+    """Compute the output bounds of a given layer."""
+    if isinstance(layer, nn.Linear):
+        A = layer.weight
+        m = layer((upper + lower) / 2)
+        r = F.linear((upper - lower) / 2, A.abs())
+        return m - r, m + r
+    if isinstance(layer, nn.Conv2d):
+        A = layer.weight
+        m = layer((upper + lower) / 2)
+        r = F.conv2d(
+            (upper - lower) / 2,
+            A.abs(),
+            stride=layer.stride,
+            padding=layer.padding,
+            dilation=layer.dilation,
+            groups=layer.groups,
+        )
+        return m - r, m + r
+    if isinstance(layer, Flatten) or check_monotonic(layer):
+        return layer(lower), layer(upper)
+    raise NotImplementedError(f'Unknown layer type: {layer}')
+
+
+def deep_mind_bounds(sequential_model, inputs, epsilon, worst_mask=False):
+    """Propagate interval bounds through a series of layers with DM method."""
+    outputs = inputs if worst_mask else None
+    lower, upper = inputs - epsilon, inputs + epsilon
+    for layer in sequential_model:
+        if worst_mask:
+            if isinstance(layer, nn.Linear):
+                outputs = F.linear(outputs, layer.weight, bias=layer.bias)
+            elif isinstance(layer, nn.Conv2d):
+                outputs = F.conv2d(
+                    outputs,
+                    layer.weight,
+                    bias=layer.bias,
+                    stride=layer.stride,
+                    padding=layer.padding,
+                    dilation=layer.dilation,
+                    groups=layer.groups)
+            elif isinstance(layer, nn.ReLU):
+                outputs[upper <= 0] = 0
+            elif isinstance(layer, Flatten):
+                outputs = layer(outputs)
+            else:
+                raise NotImplementedError(f'Unknown layer type: {layer}')
+        lower, upper = compute_output_bounds(layer, lower, upper)
+    return propagate_bounds.output_type(lower, upper, outputs, None)
+
+
+def propagate_bounds(sequential_model, inputs, epsilon):
+    """Propagate interval bounds through a series of layers."""
+    ones = None
+    offsets = []
+    grad = torch.is_grad_enabled()
+    with torch.enable_grad():
+        inputs.requires_grad = True
+        epsilon *= torch.ones_like(inputs)
+        bounds = deep_mind_bounds(sequential_model, inputs, epsilon, True)
+        for i, outputs in enumerate(bounds.midpoint.flatten(1).t(), 1):
+            if ones is None:
+                ones = torch.ones_like(outputs)
+                end = int(bounds.midpoint.numel() / ones.numel()) + grad
+            jacobian, = torch.autograd.grad(
+                outputs, inputs, ones, retain_graph=i < end, create_graph=grad)
+            offsets.append((jacobian.abs() * epsilon).flatten(1).sum(1))
+        offsets = torch.stack(offsets, dim=1).view(bounds.midpoint.size())
+    return propagate_bounds.output_type(bounds.lower, bounds.upper,
+                                        bounds.midpoint, offsets)
+
+
+propagate_bounds.output_type = namedtuple(
+    'deep_mind_bounds', ['lower', 'upper', 'midpoint', 'offset'])
