@@ -10,8 +10,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 from ..datasets import get_loader
 from ..models import get_model
-from .utils import (AverageMeter, compute_accuracy, get_device_order,
-                    manual_seed)
+from ..models.utils import propagate_bounds
+from .utils import (AverageMeter, bounds_logits, compute_accuracy,
+                    get_device_order, manual_seed)
 
 __all__ = ['train_classifier', 'one_epoch']
 
@@ -153,6 +154,11 @@ def one_epoch(train_loader, net, criterion, optimizer, preporcess):
         # compute output
         output = net(inputs)
         loss = criterion(output, targets)
+
+        # compute bounds loss
+        bounds = propagate_bounds(net, inputs, 1e-5)
+        logits = bounds_logits(output, bounds.offset, targets)
+        loss += criterion(logits, targets)
 
         # measure accuracy and record loss
         if update_metrics:

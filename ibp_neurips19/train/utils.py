@@ -6,7 +6,8 @@ import numpy as np
 import torch
 
 __all__ = [
-    'manual_seed', 'compute_accuracy', 'AverageMeter', 'get_device_order'
+    'manual_seed', 'compute_accuracy', 'AverageMeter', 'get_device_order',
+    'bounds_logits'
 ]
 
 
@@ -76,3 +77,11 @@ class AverageMeter:
     def __str__(self):
         """Short representation."""
         return f'{{{self.fmt}}}'.format(self.avg)
+
+
+def bounds_logits(output, offset, target, dim=-1):
+    """Compute the output logits for bounds loss."""
+    target = target.view(-1, 1)
+    upper_bound = output + offset
+    lower_bound = output.gather(dim, target) - offset.gather(dim, target)
+    return upper_bound.scatter(dim, target, lower_bound)
