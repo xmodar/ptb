@@ -1,54 +1,31 @@
 """Command line interface (CLI)."""
 
-from pathlib import Path
+from itertools import product
 
 import click
 
 from .__version__ import __version__
 from .train import train_classifier
 
-__all__ = ['main', 'basic']
-
-DEBUG = False
-PREFIX = Path(__file__).parent.name.upper()
-
-
-class Config:
-
-    def __init__(self):
-        self.debug = DEBUG
-
-
-pass_config = click.make_pass_decorator(Config, ensure=True)
+__all__ = ['main', 'basic', 'experiment']
 
 
 @click.group()
-@click.option(
-    '-r/-d',
-    '--run/--debug',
-    'run_mode',
-    is_flag=True,
-    default=not DEBUG,
-    show_default=True,
-    envvar='_'.join([PREFIX, 'RUN']),
-    help='Whether to run without debugging.')
 @click.version_option(__version__, '-v', '--version')
-@pass_config
-def main(config, run_mode):
+def main():
     """Interval Bound Propagation (NeurIPS 2019)."""
-    config.debug = not run_mode
-    print(f'Running in debug mode: {config.debug}')
+    return
 
 
 @main.command()
 @click.option(
-    '-e/-t',
-    '--evaluate/--train',
+    '-v/-t',
+    '--validate/--train',
     'evaluate_only',
     is_flag=True,
     default=True,
     show_default=True,
-    help='Whether to run in evaluation or training mode.')
+    help='Whether to run in validation or training mode.')
 @click.option(
     '--dataset',
     '-d',
@@ -111,7 +88,7 @@ def main(config, run_mode):
     '-c',
     type=click.Path(path_type=str),
     default='checkpoint.pth',
-    help='A checkpoint file to resume from.')
+    help='A checkpoint file to save the best model.')
 @click.option(
     '--resume',
     '-r',
@@ -130,6 +107,59 @@ def main(config, run_mode):
     type=click.IntRange(),
     default=None,
     help='Seed the random number generators (slow!).')
+@click.option(
+    '--epsilon',
+    '-e',
+    type=click.FloatRange(),
+    default=0,
+    help='Epsilon used for training with interval bounds.')
 def basic(*args, **kwargs):
     """Start basic neural network training."""
     train_classifier(*args, **kwargs)
+
+
+@main.command()
+@click.option(
+    '-r/-s',
+    '--run/--show',
+    'run',
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help='Whether to run or show the experiment(s).')
+@click.option(
+    '--index',
+    '-i',
+    type=click.IntRange(0),
+    default=None,
+    help='Which experiment.')
+@click.pass_context
+def experiment(ctx, run, index):
+    """Run one of the experiments."""
+    datasets = ['MNIST', 'CIFAR10', 'SVHN', 'CIFAR100']
+    epsilons = [0.001, 0.01, 0.03, 0.1, 0.2, 0.3, 0.4]
+    learning_rates = [1e-1, 1e-2, 1e-3]
+    models = ['small_cnn', 'medium_cnn', 'large_cnn']
+    for i, (dataset, epsilon, learning_rate, model) in enumerate(
+            product(datasets, epsilons, learning_rates, models)):
+        if index is not None and i != index:
+            continue
+        directory = f'{dataset}-{model}-{epsilon}/{learning_rate}'
+        command = (f'ibp basic --train -d {dataset} -m {model} -e {epsilon}'
+                   f' -lr {learning_rate} -l {directory}'
+                   f' -c {directory}/checkpoint.pth')
+        print(i, command)
+        if run:
+            ctx.invoke(
+                basic,
+                evaluate_only=False,
+                dataset=dataset,
+                model=model,
+                epsilon=epsilon,
+                learning_rate=learning_rate,
+                log_dir=directory,
+                checkpoint=f'{directory}/checkpoint.pth')
+
+
+if __name__ == '__main__':
+    main()  # pylint: disable=no-value-for-parameter

@@ -16,12 +16,10 @@ from .utils import (AverageMeter, bounds_logits, compute_accuracy,
 
 __all__ = ['train_classifier', 'one_epoch']
 
-EPSILON = 0.2 * 3.2456994482310937  # TODO: you are better than this!
-
 
 def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                      momentum, weight_decay, epochs, batch_size, jobs,
-                     checkpoint, resume, log_dir, seed):
+                     checkpoint, resume, log_dir, seed, epsilon):
     """Train and/or evaluate a network."""
     manual_seed(seed, benchmark_otherwise=True)
     resume = Path(resume if resume else '')
@@ -43,6 +41,9 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
     cuda = len(devices) > 0
     train_loader = get_loader(dataset, True, batch_size, cuda, jobs)
     val_loader = get_loader(dataset, False, batch_size, cuda, jobs)
+    norm = train_loader.dataset.transform.transforms[-1]
+    input_ranges = [(1 - m) / s + m / s for m, s in zip(norm.mean, norm.std)]
+    input_range = sum(input_ranges) / len(input_ranges)
 
     # create the model
     if pretrained:
@@ -63,7 +64,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
             net[0].padding,
             net[0].dilation,
             net[0].groups,
-            net[0].bias,
+            net[0].bias is not None,
             net[0].padding_mode,
         )
     if isinstance(net, nn.Sequential):
@@ -73,7 +74,12 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                     units = net[:i + 1](example_image).size(1)
                     if net[i + 1].in_features != units:
                         net[i + 1] = nn.Linear(units, net[i + 1].out_features,
-                                               net[i + 1].bias)
+                                               net[i + 1].bias is not None)
+                    if dataset == 'CIFAR100':
+                        if isinstance(net[-1], nn.Linear):
+                            if net[-1].out_features != 100:
+                                net[-1] = nn.Linear(net[-1].in_features, 100,
+                                                    net[-1].bias is not None)
                 break
 
     # define loss function (criterion) and optimizer
@@ -86,10 +92,9 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         weight_decay=weight_decay)
 
     # define a colsure wrapping one_epoch()
-    def process(epoch, loader, optimizer=None):
-        # eps = EPSILON * epoch / epochs
-        eps = 0.2 * 3.2456994482310937
-        return one_epoch(loader, net, criterion, optimizer, to_device, eps)
+    def process(loader, optimizer=None):
+        return one_epoch(loader, net, criterion, optimizer, to_device,
+                         epsilon * input_range)
 
     # optionally resume from a checkpoint
     best_acc1 = 0
@@ -113,7 +118,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
             net = nn.DataParallel(net, devices, device)
 
     # evaluate the model before training
-    progress = process(start_epoch, val_loader)
+    progress = process(val_loader)
     val_loss = progress['Loss']
     val_acc = progress['Acc@1']
     print(f'Test[{val_loss}: {val_acc}%]')
@@ -132,11 +137,11 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                 param_group['lr'] = lr
 
         # train for one epoch and evaluate on validation set
-        train_progress = process(epoch, train_loader, optimizer)
+        train_progress = process(train_loader, optimizer)
         train_loss = train_progress['Loss']
         train_acc = train_progress['Acc@1']
 
-        val_progress = process(epoch, val_loader)
+        val_progress = process(val_loader)
         val_loss = val_progress['Loss']
         val_acc = val_progress['Acc@1']
 

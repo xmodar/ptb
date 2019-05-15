@@ -36,8 +36,13 @@ def get_dataset(name, train=False):
         transforms.ToTensor(),
         transforms.Normalize(MEANS[name], STDS[name]),
     ])
+    kwargs = {
+        'split': 'train' if train else 'test',
+    } if name == 'SVHN' else {
+        'train': train
+    }
     return torchvision_datasets.__dict__[name](
-        DATASETS_DIR, train=train, transform=transform, download=True)
+        DATASETS_DIR, transform=transform, download=True, **kwargs)
 
 
 def get_loader(dataset, train, batch_size, using_cuda, jobs):
