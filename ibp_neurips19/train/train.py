@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from ..datasets import get_loader
 from ..models import get_model
-from ..models.utils import propagate_bounds
+from ..models.utils import Flatten, propagate_bounds
 from .utils import (AverageMeter, bounds_logits, compute_accuracy,
                     get_device_order, manual_seed)
 
@@ -47,8 +47,32 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         print(f'=> using pre-trained model {model}')
     else:
         print(f'=> creating model {model}')
-    net = get_model(model, pretrained)
+    net = get_model(model, pretrained).eval()
     keys = net.state_dict(keep_vars=True).keys()
+
+    # fix the input channels and hidden units sizes
+    example_image = next(iter(val_loader))[0][:1]
+    if net[0].in_channels != example_image.size(1):
+        net[0] = nn.Conv2d(
+            example_image.size(1),
+            net[0].out_channels,
+            net[0].kernel_size,
+            net[0].stride,
+            net[0].padding,
+            net[0].dilation,
+            net[0].groups,
+            net[0].bias,
+            net[0].padding_mode,
+        )
+    if isinstance(net, nn.Sequential):
+        for i, layer in enumerate(net):
+            if isinstance(layer, Flatten):
+                if len(net) > i + 1 and isinstance(net[i + 1], nn.Linear):
+                    units = net[:i + 1](example_image).size(1)
+                    if net[i + 1].in_features != units:
+                        net[i + 1] = nn.Linear(units, net[i + 1].out_features,
+                                               net[i + 1].bias)
+                break
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -94,6 +118,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
 
     if log_dir:
         writer = SummaryWriter(log_dir)
+        writer.add_graph(net, (example_image.to(device),))
     lr = get_lr(start_epoch)
     for epoch in range(start_epoch, epochs):
         # decay the learning rate by 10 every 30 epochs
@@ -129,7 +154,6 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                 parameters = net.state_dict().values()
                 torch.save({
                     'epoch': epoch + 1,
-                    'net': net,
                     'state_dict': OrderedDict(zip(keys, parameters)),
                     'best_acc1': best_acc1,
                     'optimizer': optimizer.state_dict(),
@@ -156,7 +180,7 @@ def one_epoch(train_loader, net, criterion, optimizer, preporcess):
         loss = criterion(output, targets)
 
         # compute bounds loss
-        bounds = propagate_bounds(net, inputs, 1e-5)
+        bounds = propagate_bounds(net, inputs, 0.1)
         logits = bounds_logits(output, bounds.offset, targets)
         loss += criterion(logits, targets)
 
