@@ -16,6 +16,8 @@ from .utils import (AverageMeter, bounds_logits, compute_accuracy,
 
 __all__ = ['train_classifier', 'one_epoch']
 
+EPSILON = 0.2 * 3.2456994482310937  # TODO: you are better than this!
+
 
 def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                      momentum, weight_decay, epochs, batch_size, jobs,
@@ -84,8 +86,10 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         weight_decay=weight_decay)
 
     # define a colsure wrapping one_epoch()
-    def process(loader, optimizer=None):
-        return one_epoch(loader, net, criterion, optimizer, to_device)
+    def process(epoch, loader, optimizer=None):
+        # eps = EPSILON * epoch / epochs
+        eps = 0.2 * 3.2456994482310937
+        return one_epoch(loader, net, criterion, optimizer, to_device, eps)
 
     # optionally resume from a checkpoint
     best_acc1 = 0
@@ -109,7 +113,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
             net = nn.DataParallel(net, devices, device)
 
     # evaluate the model before training
-    progress = process(val_loader)
+    progress = process(start_epoch, val_loader)
     val_loss = progress['Loss']
     val_acc = progress['Acc@1']
     print(f'Test[{val_loss}: {val_acc}%]')
@@ -128,11 +132,11 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                 param_group['lr'] = lr
 
         # train for one epoch and evaluate on validation set
-        train_progress = process(train_loader, optimizer)
+        train_progress = process(epoch, train_loader, optimizer)
         train_loss = train_progress['Loss']
         train_acc = train_progress['Acc@1']
 
-        val_progress = process(val_loader)
+        val_progress = process(epoch, val_loader)
         val_loss = val_progress['Loss']
         val_acc = val_progress['Acc@1']
 
@@ -162,7 +166,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         writer.close()
 
 
-def one_epoch(train_loader, net, criterion, optimizer, preporcess):
+def one_epoch(train_loader, net, criterion, optimizer, preporcess, epsilon):
     """Perform one training epoch."""
     batch_time = AverageMeter('Time/BatchTotal', ':6.3f')
     data_time = AverageMeter('Time/BatchData', ':6.3f')
@@ -180,9 +184,11 @@ def one_epoch(train_loader, net, criterion, optimizer, preporcess):
         loss = criterion(output, targets)
 
         # compute bounds loss
-        bounds = propagate_bounds(net, inputs, 0.1)
-        logits = bounds_logits(output, bounds.offset, targets)
-        loss += criterion(logits, targets)
+        if epsilon > 0:
+            bounds = propagate_bounds(net, inputs, epsilon)
+            logits = bounds_logits(output, bounds.offset, targets)
+            logits = logits / logits.abs().max(1).values.view(-1, 1)
+            loss += criterion(logits, targets)
 
         # measure accuracy and record loss
         if update_metrics:
