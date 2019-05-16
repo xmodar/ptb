@@ -123,4 +123,4 @@ def propagate_bounds(sequential_model, inputs, epsilon):
 
 
 propagate_bounds.output_type = namedtuple(
-    'deep_mind_bounds', ['lower', 'upper', 'midpoint', 'offset'])
+    'propagated_bounds', ['lower', 'upper', 'midpoint', 'offset'])

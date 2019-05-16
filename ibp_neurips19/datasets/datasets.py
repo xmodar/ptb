@@ -7,7 +7,8 @@ from torchvision import datasets as torchvision_datasets
 from torchvision import transforms
 
 __all__ = [
-    'add_dataset', 'get_dataset', 'get_loader', 'DATASETS_DIR', 'MEANS', 'STDS'
+    'add_dataset', 'get_dataset', 'get_loader', 'DATASETS_DIR', 'MEANS',
+    'STDS', 'NUM_CLASSES'
 ]
 
 DATASETS_DIR = Path.home() / '.torch/datasets'
@@ -22,6 +23,12 @@ STDS = {
     'SVHN': [0.2675, 0.2565, 0.2761],
     'CIFAR10': [0.2470, 0.2435, 0.2616],
     'CIFAR100': [0.2673, 0.2564, 0.2762],
+}
+NUM_CLASSES = {
+    'MNIST': 10,
+    'SVHN': 10,
+    'CIFAR10': 10,
+    'CIFAR100': 100,
 }
 
 
