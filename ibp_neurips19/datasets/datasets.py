@@ -8,21 +8,27 @@ from torchvision import transforms
 
 __all__ = [
     'add_dataset', 'get_dataset', 'get_loader', 'DATASETS_DIR', 'MEANS',
-    'STDS', 'NUM_CLASSES'
+    'STDS', 'NUM_CLASSES', 'IMAGE_SHAPES'
 ]
 
 DATASETS_DIR = Path.home() / '.torch/datasets'
 MEANS = {
-    'MNIST': [0.1307],
-    'SVHN': [0.5071, 0.4867, 0.4408],
-    'CIFAR10': [0.4915, 0.4823, 0.4468],
-    'CIFAR100': [0.5072, 0.4867, 0.4412],
+    'MNIST': (0.1307,),
+    'SVHN': (0.5071, 0.4867, 0.4408),
+    'CIFAR10': (0.4915, 0.4823, 0.4468),
+    'CIFAR100': (0.5072, 0.4867, 0.4412),
 }
 STDS = {
-    'MNIST': [0.3081],
-    'SVHN': [0.2675, 0.2565, 0.2761],
-    'CIFAR10': [0.2470, 0.2435, 0.2616],
-    'CIFAR100': [0.2673, 0.2564, 0.2762],
+    'MNIST': (0.3081,),
+    'SVHN': (0.2675, 0.2565, 0.2761),
+    'CIFAR10': (0.2470, 0.2435, 0.2616),
+    'CIFAR100': (0.2673, 0.2564, 0.2762),
+}
+IMAGE_SHAPES = {
+    'MNIST': (1, 28, 28),
+    'SVHN': (3, 28, 28),
+    'CIFAR10': (3, 32, 32),
+    'CIFAR100': (3, 32, 32),
 }
 NUM_CLASSES = {
     'MNIST': 10,

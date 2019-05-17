@@ -8,9 +8,9 @@ import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-from ..datasets import get_loader
-from ..models import get_model
-from ..models.utils import Flatten, propagate_bounds
+from ..datasets import IMAGE_SHAPES, get_loader
+from ..models import fit_to_dataset, get_model
+from ..models.utils import propagate_bounds
 from .utils import (AverageMeter, bounds_logits, compute_accuracy,
                     get_device_order, manual_seed)
 
@@ -50,37 +50,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
         print(f'=> using pre-trained model {model}')
     else:
         print(f'=> creating model {model}')
-    net = get_model(model, pretrained).eval()
+    net = fit_to_dataset(get_model(model, pretrained), dataset).eval()
     keys = net.state_dict(keep_vars=True).keys()
-
-    # fix the input channels and hidden units sizes
-    example_image = next(iter(val_loader))[0][:1]
-    if net[0].in_channels != example_image.size(1):
-        net[0] = nn.Conv2d(
-            example_image.size(1),
-            net[0].out_channels,
-            net[0].kernel_size,
-            net[0].stride,
-            net[0].padding,
-            net[0].dilation,
-            net[0].groups,
-            net[0].bias is not None,
-            net[0].padding_mode,
-        )
-    if isinstance(net, nn.Sequential):
-        for i, layer in enumerate(net):
-            if isinstance(layer, Flatten):
-                if len(net) > i + 1 and isinstance(net[i + 1], nn.Linear):
-                    units = net[:i + 1](example_image).size(1)
-                    if net[i + 1].in_features != units:
-                        net[i + 1] = nn.Linear(units, net[i + 1].out_features,
-                                               net[i + 1].bias is not None)
-                    if dataset == 'CIFAR100':
-                        if isinstance(net[-1], nn.Linear):
-                            if net[-1].out_features != 100:
-                                net[-1] = nn.Linear(net[-1].in_features, 100,
-                                                    net[-1].bias is not None)
-                break
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -127,7 +98,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
 
     if log_dir:
         writer = SummaryWriter(log_dir)
-        writer.add_graph(net, (example_image.to(device),))
+        example_image = torch.randn(1, *IMAGE_SHAPES[dataset], device=device)
+        writer.add_graph(net, (example_image,))
     lr = get_lr(start_epoch)
     for epoch in range(start_epoch, epochs):
         # decay the learning rate by 10 every 30 epochs
