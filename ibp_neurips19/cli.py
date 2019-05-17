@@ -3,11 +3,14 @@
 from itertools import product
 
 import click
+import torch
 
+from . import models
 from .__version__ import __version__
+from .attacks import compute_robustness
 from .train import train_classifier
 
-__all__ = ['main', 'basic', 'experiment']
+__all__ = ['main', 'basic', 'experiment', 'pgd']
 
 
 @click.group()
@@ -159,6 +162,78 @@ def experiment(ctx, run, index):
                 learning_rate=learning_rate,
                 log_dir=directory,
                 checkpoint=f'{directory}/checkpoint.pth')
+
+
+@main.command()
+@click.option(
+    '-r/-s',
+    '--run/--show',
+    'run',
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help='Whether to run or show the experiment(s).')
+@click.option(
+    '--index',
+    '-i',
+    type=click.IntRange(0),
+    default=None,
+    help='Which experiment.')
+def pgd(run, index, subset=None, restarts=1, seed=None):
+    """Compute PGD for the experiments."""
+
+    def experiments():
+        datasets = ['MNIST', 'CIFAR10']
+        epsilons = [0.01, 0.03, 0.1, 0.2]
+        model_size = ['small', 'medium']
+        learning_rates = [0, 1e-1, 1e-2, 1e-3]
+        test_epsilons = [2 / 255, 0.1, 0.2, 0.3]
+        for dataset, epsilon, model, learning_rate, test_epsilon in product(
+                datasets, epsilons, model_size, learning_rates, test_epsilons):
+            if dataset == 'CIFAR10':
+                if test_epsilon != 2 / 255 or epsilon != 0.01:
+                    continue
+            elif test_epsilon == 2 / 255 or epsilon == 0.01:
+                continue
+            yield dataset, epsilon, model, learning_rate, test_epsilon
+
+    for i, (dataset, epsilon, model, learning_rate,
+            test_epsilon) in enumerate(experiments()):
+        if index is not None and i != index:
+            continue
+        if learning_rate == 0:
+            checkpoint_file = (f'dm_torch/'
+                               f'{dataset.lower()}-{model}-{epsilon}.pth')
+        else:
+            checkpoint_file = (f'{dataset}-{model}_cnn-{epsilon}'
+                               f'/{learning_rate}/checkpoint.pth')
+        print(i, f'{dataset}-{model}-{epsilon}', learning_rate, test_epsilon)
+        if run:
+            net = models.__dict__[f'{model}_cnn']()
+            models.fit_to_dataset(net, dataset).eval()
+            checkpoint = torch.load(checkpoint_file)
+            net.load_state_dict(checkpoint['state_dict'])
+            results = compute_robustness(
+                net,
+                dataset,
+                device='cuda' if torch.cuda.is_available() else 'cpu',
+                attack_name='PGD',
+                restarts=restarts,
+                subset=subset,
+                subset_seed=seed,
+                attack_kwargs=dict(epsilon=test_epsilon))
+            if 'PGD' not in checkpoint:
+                checkpoint['PGD'] = []
+            checkpoint['PGD'].append({
+                'seed': seed,
+                'subset': subset,
+                'restarts': restarts,
+                'epsilon': test_epsilon,
+                'robustness': results.robustness,
+                'fooling_rate': results.fooling_rate,
+                'sorted_errors': results.sorted_errors,
+            })
+            torch.save(checkpoint, checkpoint_file)
 
 
 if __name__ == '__main__':
