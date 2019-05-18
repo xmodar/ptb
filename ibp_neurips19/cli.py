@@ -1,6 +1,7 @@
 """Command line interface (CLI)."""
 
 from itertools import product
+from pathlib import Path
 
 import click
 import torch
@@ -142,9 +143,9 @@ def experiment(ctx, run, index):
     datasets = ['MNIST', 'CIFAR10', 'SVHN', 'CIFAR100']
     epsilons = [0.001, 0.01, 0.03, 0.1, 0.2, 0.3, 0.4]
     learning_rates = [1e-1, 1e-2, 1e-3]
-    models = ['small_cnn', 'medium_cnn', 'large_cnn']
+    model_sizes = ['small_cnn', 'medium_cnn', 'large_cnn']
     for i, (dataset, epsilon, learning_rate, model) in enumerate(
-            product(datasets, epsilons, learning_rates, models)):
+            product(datasets, epsilons, learning_rates, model_sizes)):
         if index is not None and i != index:
             continue
         directory = f'{dataset}-{model}-{epsilon}/{learning_rate}'
@@ -181,24 +182,14 @@ def experiment(ctx, run, index):
     help='Which experiment.')
 def pgd(run, index, subset=None, restarts=1, seed=None):
     """Compute PGD for the experiments."""
-
-    def experiments():
-        datasets = ['MNIST', 'CIFAR10']
-        epsilons = [0.01, 0.03, 0.1, 0.2]
-        model_size = ['small', 'medium']
-        learning_rates = [0, 1e-1, 1e-2, 1e-3]
-        test_epsilons = [2 / 255, 0.1, 0.2, 0.3]
-        for dataset, epsilon, model, learning_rate, test_epsilon in product(
-                datasets, epsilons, model_size, learning_rates, test_epsilons):
-            if dataset == 'CIFAR10':
-                if test_epsilon != 2 / 255 or epsilon != 0.01:
-                    continue
-            elif test_epsilon == 2 / 255 or epsilon == 0.01:
-                continue
-            yield dataset, epsilon, model, learning_rate, test_epsilon
-
-    for i, (dataset, epsilon, model, learning_rate,
-            test_epsilon) in enumerate(experiments()):
+    datasets = ['MNIST', 'CIFAR10']
+    epsilons = [0.001, 0.01, 0.03, 0.1, 0.2, 0.3, 0.4]
+    model_size = ['small', 'medium', 'large']
+    learning_rates = [0, 1e-1, 1e-2, 1e-3]
+    test_epsilons = [2 / 255, 0.1, 0.2, 0.3]
+    for i, (dataset, epsilon, model, learning_rate, test_epsilon) in enumerate(
+            product(datasets, epsilons, model_size, learning_rates,
+                    test_epsilons)):
         if index is not None and i != index:
             continue
         if learning_rate == 0:
@@ -207,8 +198,9 @@ def pgd(run, index, subset=None, restarts=1, seed=None):
         else:
             checkpoint_file = (f'{dataset}-{model}_cnn-{epsilon}'
                                f'/{learning_rate}/checkpoint.pth')
-        print(i, f'{dataset}-{model}-{epsilon}', learning_rate, test_epsilon)
+        print(i, f'{dataset}-{model}-{epsilon}@{learning_rate}:', test_epsilon)
         if run:
+            Path('pgd').mkdir(exist_ok=True)
             net = models.__dict__[f'{model}_cnn']()
             models.fit_to_dataset(net, dataset).eval()
             checkpoint = torch.load(checkpoint_file)
@@ -222,18 +214,19 @@ def pgd(run, index, subset=None, restarts=1, seed=None):
                 subset=subset,
                 subset_seed=seed,
                 attack_kwargs=dict(epsilon=test_epsilon))
-            if 'PGD' not in checkpoint:
-                checkpoint['PGD'] = []
-            checkpoint['PGD'].append({
+            torch.save({
+                'model': model,
+                'dataset': dataset,
+                'epsilon': epsilon,
+                'learning_rate': learning_rate,
                 'seed': seed,
                 'subset': subset,
                 'restarts': restarts,
-                'epsilon': test_epsilon,
+                'test_epsilon': test_epsilon,
                 'robustness': results.robustness,
                 'fooling_rate': results.fooling_rate,
                 'sorted_errors': results.sorted_errors,
-            })
-            torch.save(checkpoint, checkpoint_file)
+            }, f'pgd/{i}.pth')
 
 
 if __name__ == '__main__':
