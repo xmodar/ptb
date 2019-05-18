@@ -18,8 +18,9 @@ __all__ = ['train_classifier', 'one_epoch']
 
 
 def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
-                     momentum, weight_decay, epochs, batch_size, jobs,
-                     checkpoint, resume, log_dir, seed, epsilon):
+                     momentum, weight_decay, epsilon, factor, temperature,
+                     epochs, batch_size, jobs, checkpoint, resume, log_dir,
+                     seed):
     """Train and/or evaluate a network."""
     manual_seed(seed, benchmark_otherwise=True)
     resume = Path(resume if resume else '')
@@ -65,7 +66,7 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
     # define a colsure wrapping one_epoch()
     def process(loader, optimizer=None):
         return one_epoch(loader, net, criterion, optimizer, to_device,
-                         epsilon * input_range)
+                         epsilon * input_range, factor, temperature)
 
     # optionally resume from a checkpoint
     best_acc1 = 0
@@ -139,11 +140,16 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                     'best_acc1': best_acc1,
                     'optimizer': optimizer.state_dict(),
                 }, checkpoint)
+
+        if train_loss != train_loss:
+            print('Training was stopped (reached NaN)!')
+            break
     if log_dir:
         writer.close()
 
 
-def one_epoch(train_loader, net, criterion, optimizer, preporcess, epsilon):
+def one_epoch(train_loader, net, criterion, optimizer, preporcess, epsilon,
+              factor, temperature):
     """Perform one training epoch."""
     batch_time = AverageMeter('Time/BatchTotal', ':6.3f')
     data_time = AverageMeter('Time/BatchData', ':6.3f')
@@ -161,11 +167,12 @@ def one_epoch(train_loader, net, criterion, optimizer, preporcess, epsilon):
         loss = criterion(output, targets)
 
         # compute bounds loss
-        if epsilon > 0:
+        if epsilon > 0 and factor > 0:
             bounds = propagate_bounds(net, inputs, epsilon)
             logits = bounds_logits(output, bounds.offset, targets)
-            logits = logits / logits.abs().max(1).values.view(-1, 1)
-            loss += criterion(logits, targets)
+            max_abs_logits = logits.abs().max(1).values.view(-1, 1)
+            logits = logits / (temperature * max_abs_logits)
+            loss += factor * criterion(logits, targets)
 
         # measure accuracy and record loss
         if update_metrics:

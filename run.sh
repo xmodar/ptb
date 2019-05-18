@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name IBP
-#SBATCH --array=0-167
-#SBATCH --time=10:00:00
+#SBATCH --array=0-479
+#SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -o logs/%A_%a.out
 #SBATCH -e logs/%A_%a.err
@@ -18,4 +18,4 @@ conda activate ibp
 
 export CUDA_VISIBLE_DEVICES=0
 
-ibp pgd -r -i $SLURM_ARRAY_TASK_ID
+ibp experiment -r -i $SLURM_ARRAY_TASK_ID

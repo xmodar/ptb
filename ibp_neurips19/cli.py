@@ -1,5 +1,7 @@
 """Command line interface (CLI)."""
 
+from argparse import Namespace
+from collections import OrderedDict
 from itertools import product
 from pathlib import Path
 
@@ -11,7 +13,7 @@ from .__version__ import __version__
 from .attacks import compute_robustness
 from .train import train_classifier
 
-__all__ = ['main', 'basic', 'experiment', 'pgd']
+__all__ = ['main', 'basic', 'experiment']
 
 
 @click.group()
@@ -68,6 +70,18 @@ def main():
     type=click.FloatRange(min=0),
     default=1e-4,
     help='SGD weight decay.')
+@click.option(
+    '--factor',
+    '-f',
+    type=click.FloatRange(min=0),
+    default=1e-4,
+    help='The trade-off coefficient.')
+@click.option(
+    '--temperature',
+    '-t',
+    type=click.FloatRange(min=0),
+    default=1e-4,
+    help='Softmax temperature.')
 @click.option(
     '--number-of-epochs',
     '-n',
@@ -140,106 +154,79 @@ def basic(*args, **kwargs):
 @click.pass_context
 def experiment(ctx, run, index):
     """Run one of the experiments."""
-    datasets = ['MNIST', 'CIFAR10', 'SVHN', 'CIFAR100']
-    epsilons = [0.001, 0.01, 0.03, 0.1, 0.2, 0.3, 0.4]
-    learning_rates = [1e-1, 1e-2, 1e-3]
-    model_sizes = ['small_cnn', 'medium_cnn', 'large_cnn']
-    for i, (dataset, epsilon, learning_rate, model) in enumerate(
-            product(datasets, epsilons, learning_rates, model_sizes)):
+    combinations = OrderedDict(
+        dataset=['MNIST', 'CIFAR10'],
+        model=['small_cnn', 'medium_cnn', 'large_cnn'],
+        epsilon=[2 / 255, 8 / 255, 16 / 255, 0.1, 0.2, 0.3, 0.4],
+        learning_rate=[1e-2, 1e-3],
+        factor=[1e-2, 1e-1, 1, 1e1, 1e2],
+        temperature=[1, 5],
+    )
+
+    def gen():
+        for c in product(*combinations.values()):
+            c = Namespace(**dict(zip(combinations.keys(), c)))
+            if c.dataset == 'MNIST' and c.epsilon < 0.1:
+                continue
+            if c.dataset == 'CIFAR10' and c.epsilon > 0.1:
+                continue
+            yield c
+
+    for i, c in enumerate(gen()):
         if index is not None and i != index:
             continue
-        directory = f'{dataset}-{model}-{epsilon}/{learning_rate}'
-        command = (f'ibp basic --train -d {dataset} -m {model} -e {epsilon}'
-                   f' -lr {learning_rate} -l {directory}'
-                   f' -c {directory}/checkpoint.pth')
+        parameters = f'{c.learning_rate}-{c.factor}-{c.temperature}'
+        directory = Path(f'{c.dataset}-{c.model}-{c.epsilon}/{parameters}')
+        checkpoint_file = directory / 'checkpoint.pth'
+        command = (f'ibp basic --train -d {c.dataset} -m {c.model}'
+                   f' -e {c.epsilon} -f {c.factor} -t {c.temperature}'
+                   f' -lr {c.learning_rate} -l {directory}'
+                   f' -c {checkpoint_file}')
         print(i, command)
         if run:
             ctx.invoke(
                 basic,
                 evaluate_only=False,
-                dataset=dataset,
-                model=model,
-                epsilon=epsilon,
-                learning_rate=learning_rate,
+                dataset=c.dataset,
+                model=c.model,
+                epsilon=c.epsilon,
+                factor=c.factor,
+                temperature=c.temperature,
+                learning_rate=c.learning_rate,
                 log_dir=directory,
-                checkpoint=f'{directory}/checkpoint.pth')
+                checkpoint=checkpoint_file)
 
-
-@main.command()
-@click.option(
-    '-r/-s',
-    '--run/--show',
-    'run',
-    is_flag=True,
-    default=False,
-    show_default=True,
-    help='Whether to run or show the experiment(s).')
-@click.option(
-    '--index',
-    '-i',
-    type=click.IntRange(0),
-    default=None,
-    help='Which experiment.')
-def pgd(run, index, subset=None, restarts=1, seed=None):
-    """Compute PGD for the experiments."""
-    datasets = ['MNIST', 'CIFAR10']
-    epsilons = [0.001, 0.01, 0.03, 0.1, 0.2, 0.3, 0.4]
-    model_size = ['small', 'medium', 'large']
-    learning_rates = [0, 1e-1, 1e-2, 1e-3]
-    test_epsilons = [2 / 255, 0.1, 0.2, 0.3]
-
-    def gen():
-        for i, v in enumerate(
-                product(datasets, epsilons, model_size, learning_rates,
-                        test_epsilons)):
-            if v[-2] == 0:
-                yield i, v
-
-    for i_, (i, (dataset, epsilon, model, learning_rate,
-                 test_epsilon)) in enumerate(gen()):
-        if index is not None and i != index:
-            continue
-        if learning_rate == 0:
-            checkpoint_file = (f'dm_torch/'
-                               f'{dataset.lower()}-{model}-{epsilon}.pth')
-        else:
-            checkpoint_file = (f'{dataset}-{model}_cnn-{epsilon}'
-                               f'/{learning_rate}/checkpoint.pth')
-        print(i_, i, f'{dataset}-{model}-{epsilon}@{learning_rate}:',
-              test_epsilon)
-        if run:
-            Path('pgd').mkdir(exist_ok=True)
-            net = models.__dict__[f'{model}_cnn']()
-            models.fit_to_dataset(net, dataset).eval()
+            # compute PGD
+            net = models.__dict__[c.model]()
+            models.fit_to_dataset(net, c.dataset).eval()
             checkpoint = torch.load(checkpoint_file)
             net.load_state_dict(checkpoint['state_dict'])
-            mean = std = None
-            if learning_rate == 0:
-                mean, std = [0], [1]
-            results = compute_robustness(
-                net,
-                dataset,
-                device='cuda' if torch.cuda.is_available() else 'cpu',
-                attack_name='PGD',
-                restarts=restarts,
-                subset=subset,
-                subset_seed=seed,
-                mean=mean,
-                std=std,
-                attack_kwargs=dict(epsilon=test_epsilon))
-            torch.save({
-                'model': model,
-                'dataset': dataset,
-                'epsilon': epsilon,
-                'learning_rate': learning_rate,
-                'seed': seed,
-                'subset': subset,
-                'restarts': restarts,
-                'test_epsilon': test_epsilon,
-                'robustness': results.robustness,
-                'fooling_rate': results.fooling_rate,
-                'sorted_errors': results.sorted_errors,
-            }, f'pgd/{i}.pth')
+
+            test_epsilons = combinations['epsilon']
+            if c.dataset == 'MNIST':
+                test_epsilons = [e for e in test_epsilons if e >= 0.1]
+            elif c.dataset == 'CIFAR10':
+                test_epsilons = [e for e in test_epsilons if e <= 0.1]
+            for test_epsilon in test_epsilons:
+                results = compute_robustness(
+                    net,
+                    c.dataset,
+                    device='cuda' if torch.cuda.is_available() else 'cpu',
+                    attack_kwargs=dict(epsilon=test_epsilon))
+                torch.save({
+                    'model': c.model,
+                    'dataset': c.dataset,
+                    'accuracy': checkpoint['best_acc1'],
+                    'epsilon': c.epsilon,
+                    'learning_rate': c.learning_rate,
+                    'seed': None,
+                    'subset': None,
+                    'restarts': 1,
+                    'test_epsilon': test_epsilon,
+                    'robustness': results.robustness,
+                    'fooling_rate': results.fooling_rate,
+                    'sorted_errors': results.sorted_errors,
+                }, directory / f'pgd-{test_epsilon}.pth')
 
 
 if __name__ == '__main__':
