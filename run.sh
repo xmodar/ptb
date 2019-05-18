@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name IBP
-#SBATCH --array=0-671
+#SBATCH --array=0-167
 #SBATCH --time=10:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -o logs/%A_%a.out

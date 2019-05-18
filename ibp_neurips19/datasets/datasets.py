@@ -43,11 +43,15 @@ def add_dataset(name, function):
     torchvision_datasets.__dict__[name] = function
 
 
-def get_dataset(name, train=False):
+def get_dataset(name, train=False, mean=None, std=None):
     """Get a dataset given its name."""
+    if mean is None:
+        mean = MEANS[name]
+    if std is None:
+        std = STDS[name]
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Normalize(MEANS[name], STDS[name]),
+        transforms.Normalize(mean, std),
     ])
     kwargs = {
         'split': 'train' if train else 'test',

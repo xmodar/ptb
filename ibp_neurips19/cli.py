@@ -187,9 +187,16 @@ def pgd(run, index, subset=None, restarts=1, seed=None):
     model_size = ['small', 'medium', 'large']
     learning_rates = [0, 1e-1, 1e-2, 1e-3]
     test_epsilons = [2 / 255, 0.1, 0.2, 0.3]
-    for i, (dataset, epsilon, model, learning_rate, test_epsilon) in enumerate(
-            product(datasets, epsilons, model_size, learning_rates,
-                    test_epsilons)):
+
+    def gen():
+        for i, v in enumerate(
+                product(datasets, epsilons, model_size, learning_rates,
+                        test_epsilons)):
+            if v[-2] == 0:
+                yield i, v
+
+    for i_, (i, (dataset, epsilon, model, learning_rate,
+                 test_epsilon)) in enumerate(gen()):
         if index is not None and i != index:
             continue
         if learning_rate == 0:
@@ -198,13 +205,17 @@ def pgd(run, index, subset=None, restarts=1, seed=None):
         else:
             checkpoint_file = (f'{dataset}-{model}_cnn-{epsilon}'
                                f'/{learning_rate}/checkpoint.pth')
-        print(i, f'{dataset}-{model}-{epsilon}@{learning_rate}:', test_epsilon)
+        print(i_, i, f'{dataset}-{model}-{epsilon}@{learning_rate}:',
+              test_epsilon)
         if run:
             Path('pgd').mkdir(exist_ok=True)
             net = models.__dict__[f'{model}_cnn']()
             models.fit_to_dataset(net, dataset).eval()
             checkpoint = torch.load(checkpoint_file)
             net.load_state_dict(checkpoint['state_dict'])
+            mean = std = None
+            if learning_rate == 0:
+                mean, std = [0], [1]
             results = compute_robustness(
                 net,
                 dataset,
@@ -213,6 +224,8 @@ def pgd(run, index, subset=None, restarts=1, seed=None):
                 restarts=restarts,
                 subset=subset,
                 subset_seed=seed,
+                mean=mean,
+                std=std,
                 attack_kwargs=dict(epsilon=test_epsilon))
             torch.save({
                 'model': model,

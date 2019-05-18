@@ -37,9 +37,12 @@ DEFAULT_KWARGS = {
 }
 
 
-def get_attack_model(model, dataset, device):
+def get_attack_model(model, dataset, device, mean=None, std=None):
     """Wrap an `torch.nn.Module` as an attack model."""
-    mean, std = datasets.MEANS[dataset], datasets.STDS[dataset]
+    if mean is None:
+        mean = datasets.MEANS[dataset]
+    if std is None:
+        std = datasets.STDS[dataset]
     mean, std = [[[m]] for m in mean], [[[s]] for s in std]
     return PyTorchModel(
         model.eval().to(device),
@@ -79,9 +82,14 @@ def get_attack(attack_type, **kwargs):
     return attack
 
 
-def get_default_attack(attack_name, model, dataset, device):
+def get_default_attack(attack_name,
+                       model,
+                       dataset,
+                       device,
+                       mean=None,
+                       std=None):
     """Get the an attack with the default parameters."""
-    attack_model = get_attack_model(model, dataset, device)
+    attack_model = get_attack_model(model, dataset, device, mean, std)
     attack_type = get_attack_type(attack_model, attack_name)
     return get_attack(attack_type)
 
@@ -95,12 +103,18 @@ def compute_robustness(  # pylint: disable=dangerous-default-value
         subset=None,
         subset_seed=None,
         restarts=1,
+        mean=None,
+        std=None,
         attack_kwargs={},
         type_kwargs={},
         **tqdm_kwargs):
     """Compute the adversarial robustness of the model using foolbox."""
     device = torch.device(device)
-    attack_model = get_attack_model(model, dataset, device)
+    if mean is None:
+        mean = datasets.MEANS[dataset]
+    if std is None:
+        std = datasets.STDS[dataset]
+    attack_model = get_attack_model(model, dataset, device, mean, std)
     attack_type = get_attack_type(attack_model, attack_name, **type_kwargs)
     attack = get_attack(attack_type, **attack_kwargs)
     errors = []
@@ -110,9 +124,8 @@ def compute_robustness(  # pylint: disable=dangerous-default-value
     warnings.warn = lambda *a, **k: None
     if 'desc' not in tqdm_kwargs:
         tqdm_kwargs['desc'] = f'Computing {attack_name} robustness'
-    mean, std = datasets.MEANS[dataset], datasets.STDS[dataset]
+    dataset = datasets.get_dataset(dataset, False, mean, std)
     if subset:
-        dataset = datasets.get_dataset(dataset, False)
         with torch.random.fork_rng([], subset_seed is not None):
             if subset_seed:
                 torch.default_generator.manual_seed(subset_seed)
