@@ -7,7 +7,8 @@ from torch import nn
 from torch.nn import functional as F
 
 __all__ = [
-    'Flatten', 'compute_output_bounds', 'deep_mind_bounds', 'propagate_bounds'
+    'Flatten', 'adjust_sequential_cnn', 'compute_output_bounds',
+    'deep_mind_bounds', 'propagate_bounds'
 ]
 
 
@@ -48,6 +49,38 @@ class Flatten(nn.Module):
         if end_dim is None:
             end_dim = self.end_dim
         return inputs.flatten(start_dim, end_dim)
+
+
+def adjust_sequential_cnn(model, channels, height, width, num_classes):
+    """Fix the number of hidden units in a sequential CNN."""
+    if not isinstance(model, nn.Sequential):
+        return model
+    example_image = torch.randn(1, channels, height, width)
+    if model[0].in_channels != channels:
+        model[0] = nn.Conv2d(
+            channels,
+            model[0].out_channels,
+            model[0].kernel_size,
+            model[0].stride,
+            model[0].padding,
+            model[0].dilation,
+            model[0].groups,
+            model[0].bias is not None,
+            model[0].padding_mode,
+        )
+    for i, layer in enumerate(model):
+        if isinstance(layer, Flatten):
+            if len(model) > i + 1 and isinstance(model[i + 1], nn.Linear):
+                units = model[:i + 1](example_image).size(1)
+                if model[i + 1].in_features != units:
+                    model[i + 1] = nn.Linear(units, model[i + 1].out_features,
+                                             model[i + 1].bias is not None)
+            break
+    if isinstance(model[-1], nn.Linear):
+        if model[-1].out_features != num_classes:
+            model[-1] = nn.Linear(model[-1].in_features, num_classes,
+                                  model[-1].bias is not None)
+    return model.train(model.training)
 
 
 def compute_output_bounds(layer, lower, upper):
@@ -123,4 +156,4 @@ def propagate_bounds(sequential_model, inputs, epsilon):
 
 
 propagate_bounds.output_type = namedtuple(
-    'deep_mind_bounds', ['lower', 'upper', 'midpoint', 'offset'])
+    'propagated_bounds', ['lower', 'upper', 'midpoint', 'offset'])

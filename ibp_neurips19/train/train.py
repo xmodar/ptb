@@ -8,17 +8,19 @@ import torch
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-from ..datasets import get_loader
-from ..models import get_model
-from .utils import (AverageMeter, compute_accuracy, get_device_order,
-                    manual_seed)
+from ..datasets import IMAGE_SHAPES, get_loader
+from ..models import fit_to_dataset, get_model
+from ..models.utils import propagate_bounds
+from .utils import (AverageMeter, bounds_logits, compute_accuracy,
+                    get_device_order, manual_seed)
 
 __all__ = ['train_classifier', 'one_epoch']
 
 
 def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
-                     momentum, weight_decay, epochs, batch_size, jobs,
-                     checkpoint, resume, log_dir, seed):
+                     momentum, weight_decay, epsilon, factor, temperature,
+                     epochs, batch_size, jobs, checkpoint, resume, log_dir,
+                     seed):
     """Train and/or evaluate a network."""
     manual_seed(seed, benchmark_otherwise=True)
     resume = Path(resume if resume else '')
@@ -40,13 +42,16 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
     cuda = len(devices) > 0
     train_loader = get_loader(dataset, True, batch_size, cuda, jobs)
     val_loader = get_loader(dataset, False, batch_size, cuda, jobs)
+    norm = train_loader.dataset.transform.transforms[-1]
+    input_ranges = [(1 - m) / s + m / s for m, s in zip(norm.mean, norm.std)]
+    input_range = sum(input_ranges) / len(input_ranges)
 
     # create the model
     if pretrained:
         print(f'=> using pre-trained model {model}')
     else:
         print(f'=> creating model {model}')
-    net = get_model(model, pretrained)
+    net = fit_to_dataset(get_model(model, pretrained), dataset).eval()
     keys = net.state_dict(keep_vars=True).keys()
 
     # define loss function (criterion) and optimizer
@@ -60,7 +65,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
 
     # define a colsure wrapping one_epoch()
     def process(loader, optimizer=None):
-        return one_epoch(loader, net, criterion, optimizer, to_device)
+        return one_epoch(loader, net, criterion, optimizer, to_device,
+                         epsilon * input_range, factor, temperature)
 
     # optionally resume from a checkpoint
     best_acc1 = 0
@@ -93,6 +99,8 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
 
     if log_dir:
         writer = SummaryWriter(log_dir)
+        example_image = torch.randn(1, *IMAGE_SHAPES[dataset], device=device)
+        writer.add_graph(net, (example_image,))
     lr = get_lr(start_epoch)
     for epoch in range(start_epoch, epochs):
         # decay the learning rate by 10 every 30 epochs
@@ -128,16 +136,20 @@ def train_classifier(evaluate_only, dataset, model, pretrained, learning_rate,
                 parameters = net.state_dict().values()
                 torch.save({
                     'epoch': epoch + 1,
-                    'net': net,
                     'state_dict': OrderedDict(zip(keys, parameters)),
                     'best_acc1': best_acc1,
                     'optimizer': optimizer.state_dict(),
                 }, checkpoint)
+
+        if train_loss != train_loss:
+            print('Training was stopped (reached NaN)!')
+            break
     if log_dir:
         writer.close()
 
 
-def one_epoch(train_loader, net, criterion, optimizer, preporcess):
+def one_epoch(train_loader, net, criterion, optimizer, preporcess, epsilon,
+              factor, temperature):
     """Perform one training epoch."""
     batch_time = AverageMeter('Time/BatchTotal', ':6.3f')
     data_time = AverageMeter('Time/BatchData', ':6.3f')
@@ -153,6 +165,14 @@ def one_epoch(train_loader, net, criterion, optimizer, preporcess):
         # compute output
         output = net(inputs)
         loss = criterion(output, targets)
+
+        # compute bounds loss
+        if epsilon > 0 and factor > 0:
+            bounds = propagate_bounds(net, inputs, epsilon)
+            logits = bounds_logits(output, bounds.offset, targets)
+            max_abs_logits = logits.abs().max(1).values.view(-1, 1)
+            logits = logits / (temperature * max_abs_logits)
+            loss += factor * criterion(logits, targets)
 
         # measure accuracy and record loss
         if update_metrics:
