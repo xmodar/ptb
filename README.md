@@ -1,26 +1,84 @@
-# Interval Bound Propagation (NeurIPS 2019)
+## Probabilistically True and Tight Bounds for Robust DNN Training
 
-## Requirements
+Training Deep Neural Networks (DNNs) that are robust to norm bounded adversarial attacks remains an elusive problem. While verification based methods are generally too expensive to robustly train large networks, it was demonstrated in Gowal et. al. that bounded input intervals can be inexpensively propagated per layer through large networks. This interval bound propagation (IBP) approach lead to high robustness and was the first to be employed on large networks. However, due to the very loose nature of the IBP bounds, particularly for large networks, the required training procedure is complex and involved. In this paper, we closely examine the bounds of a block of layers composed of an affine layer followed by a ReLU nonlinearity followed by another affine layer. In doing so, we propose _probabilistic_ bounds, true bounds with overwhelming probability, that are provably tighter than IBP bounds in expectation. We then extend this result to deeper networks through blockwise propagation and show that we can achieve orders of magnitudes tighter bounds compared to IBP. With such tight bounds, we demonstrate that a simple standard training procedure can achieve the best robustness-accuracy trade-off across several architectures on both MNIST and CIFAR10.
 
-You might need [poetry 0.12.11](https://github.com/sdispater/poetry) and [jupyterlab 0.35.4](https://github.com/jupyterlab/jupyterlab) installed on [python 3.7.2](https://www.python.org/).
+### Usage
 
-Clone this repository and create a virtual environment:
+Install it using [poetry 0.12.11](https://github.com/sdispater/poetry) (the recommended way):
 ```sh
 git clone https://github.com/ModarTensai/ibp-neurips19 && cd ibp-neurips19
+poetry install
+```
+
+For Jupyter support:
+```sh
 poetry install --extras jupyter
 poetry run python -m ipykernel install --user --name ibp-neurips19
 ```
 
-## Usage
-
-The two most important directories are `ibp-neurips19` (the package folder) and `playground`. Your package folder is your organized code utilities which you use in your experiments. The playground folder is where you put your Jupyter notebooks and experiments code.
-
-Activate the environment and run it (consider using [tmux 2.1](https://github.com/tmux/tmux)):
+Or using pip:
 ```sh
-source ./.venv/bin/activate
-cd playground && jupyter lab
+pip install git+https://github.com/ModarTensai/ibp-neurips19
 ```
 
-Use [vs code 1.31.1](https://code.visualstudio.com/) to edit your package files. Add any new extension to `.vscode/extensions.json` to make them available to everyone.
+Then, check this out:
+```sh
+$ ibp basic --help
+Usage: ibp basic [OPTIONS]
 
-Don't install any dependency manually. Instead, use poetry and put them in `pyproject.toml`.
+  Start basic neural network training.
+
+Options:
+  -v, --validate / -t, --train    Whether to run in validation or training
+                                  mode.  [default: True]
+  -d, --dataset TEXT              Which dataset to use.
+  -m, --model TEXT                Which model architecture to use.
+  -p, --pretrained / -s, --scratch
+                                  Whether to load a pretrained model.
+                                  [default: False]
+  -lr, --learning-rate FLOAT RANGE
+                                  Learning rate.
+  -mm, --momentum FLOAT RANGE     SGD momentum.
+  -w, --weight-decay FLOAT RANGE  SGD weight decay.
+  -f, --factor FLOAT RANGE        The trade-off coefficient.
+  -t, --temperature FLOAT RANGE   Softmax temperature.
+  -n, --number-of-epochs INTEGER RANGE
+                                  The maximum number of epochs.
+  -b, --batch-size INTEGER RANGE  Mini-batch size.
+  -j, --jobs INTEGER RANGE        Number of threads for data loading when
+                                  using cuda.
+  -c, --checkpoint PATH           A checkpoint file to save the best model.
+  -r, --resume PATH               A checkpoint file to resume from.
+  -l, --log-dir PATH              A tensorboard logs directory.
+  -sd, --seed INTEGER RANGE       Seed the random number generators (slow!).
+  -e, --epsilon FLOAT RANGE       Epsilon used for training with interval
+                                  bounds.
+  --help                          Show this message and exit.
+```
+
+### Cite
+
+This is the official implementation of the method described in [this paper]():
+
+```bibtex
+@article{Alsubaihi_2019_CoRR,
+    author = {Alsubaihi, Salman and Bibi, Adel and Alfadly, Modar and Ghanem, Bernard},
+    title = {Probabilistically True and Tight Bounds for Robust Deep Neural Network Training},
+    journal={CoRR},
+    archivePrefix={arXiv},
+    month = {May},
+    year = {2019}
+}
+```
+
+### License
+
+MIT
+
+### Author
+
+[Modar M. Alfadly](https://modar.me/)
+
+### Contributors
+
+I would gladly accept any pull request that improves any aspect of this repository.
