@@ -6,25 +6,25 @@ Training Deep Neural Networks (DNNs) that are robust to norm bounded adversarial
 
 Install it using [poetry 0.12.11](https://github.com/sdispater/poetry) (the recommended way):
 ```sh
-git clone https://github.com/ModarTensai/ibp-neurips19 && cd ibp-neurips19
+git clone https://github.com/ModarTensai/ptb && cd ptb
 poetry install
 ```
 
 For Jupyter support:
 ```sh
 poetry install --extras jupyter
-poetry run python -m ipykernel install --user --name ibp-neurips19
+poetry run python -m ipykernel install --user --name ptb
 ```
 
 Or using pip:
 ```sh
-pip install git+https://github.com/ModarTensai/ibp-neurips19
+pip install git+https://github.com/ModarTensai/ptb
 ```
 
 Then, check this out:
-```sh
-$ ibp basic --help
-Usage: ibp basic [OPTIONS]
+```
+$ ptb basic --help
+Usage: ptb basic [OPTIONS]
 
   Start basic neural network training.
 
@@ -56,18 +56,20 @@ Options:
   --help                          Show this message and exit.
 ```
 
+Please, note that in this current version, training using PTB on multiple GPUs is not supported. However, the code will try to use all available GPUs which will lead to an error with DataParallel. In case you have more than one GPU, don't forget to set the environment variable `CUDA_VISIBLE_DEVICES` to only one GPU.
+
 ### Cite
 
-This is the official implementation of the method described in [this paper]():
+This is the official implementation of the method described in [this paper](https://arxiv.org/pdf/1905.12418.pdf):
 
 ```bibtex
-@article{Alsubaihi_2019_CoRR,
-    author = {Alsubaihi, Salman and Bibi, Adel and Alfadly, Modar and Ghanem, Bernard},
-    title = {Probabilistically True and Tight Bounds for Robust Deep Neural Network Training},
-    journal={CoRR},
+@misc{alsubaihi2019probabilistically,
+    title={Probabilistically True and Tight Bounds for Robust Deep Neural Network Training},
+    author={Salman Alsubaihi and Adel Bibi and Modar Alfadly and Bernard Ghanem},
+    year={2019},
+    eprint={1905.12418},
     archivePrefix={arXiv},
-    month = {May},
-    year = {2019}
+    primaryClass={cs.LG}
 }
 ```
 

@@ -1,16 +1,16 @@
 [tool.poetry]
-name = "ibp-neurips19"
+name = "ptb"
 version = "0.1.0"
-description = "Interval Bound Propagation (NeurIPS 2019)"
+description = "Probabilistically True and Tight Bounds for Robust Deep Neural Network Training"
 authors = ["ModarTensai <ModarTensai@gmail.com>"]
 license = "MIT"
 packages = [
-    { include = "ibp_neurips19", from = "." }
+    { include = "ptb", from = "." }
 ]
 include = ["READEME.md"]
 
 [tool.poetry.scripts]
-ibp = 'ibp_neurips19:cli.main'
+ptb = 'ptb:cli.main'
 
 [tool.poetry.dependencies]
 python = "^3.7"

@@ -178,7 +178,7 @@ def experiment(ctx, run, index):
         parameters = f'{c.learning_rate}-{c.factor}-{c.temperature}'
         directory = Path(f'{c.dataset}-{c.model}-{c.epsilon}/{parameters}')
         checkpoint_file = directory / 'checkpoint.pth'
-        command = (f'ibp basic --train -d {c.dataset} -m {c.model}'
+        command = (f'ptb basic --train -d {c.dataset} -m {c.model}'
                    f' -e {c.epsilon} -f {c.factor} -t {c.temperature}'
                    f' -lr {c.learning_rate} -l {directory}'
                    f' -c {checkpoint_file}')
