@@ -64,8 +64,8 @@ This is the official implementation of the method described in [this paper](http
 
 ```bibtex
 @misc{alsubaihi2019probabilistically,
-    title={Probabilistically True and Tight Bounds for Robust Deep Neural Network Training},
-    author={Salman Alsubaihi and Adel Bibi and Modar Alfadly and Bernard Ghanem},
+    title={Expected Tight Bounds for Robust Deep Neural Network Training},
+    author={Salman Alsubaihi and Adel Bibi and Modar Alfadly and Abdullah Hamdi and Bernard Ghanem},
     year={2019},
     eprint={1905.12418},
     archivePrefix={arXiv},
